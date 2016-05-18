@@ -4,6 +4,8 @@ const int xPinCtl = A0;
 const int yPinCtl = A1;
 const int zPinCtl = 8;
 
+const int dPinBuzzer = 7;
+
 const int ticksPerSecond = 5;
 const int sensiCtl = 4;
 
@@ -73,9 +75,9 @@ void controlXY(int x, int y) {
 
 	//YControl
 	if (y < 512 - activationRange)
-		ctlD();
-	else if (y > 512 + activationRange)
 		ctlU();
+	else if (y > 512 + activationRange)
+		ctlD();
 }
 
 /* Input Controller */
@@ -87,9 +89,9 @@ int inputCtl(bool waitForFinalClick = false, int id = -1) {
 			ctlC();
 		//XY Steuerung
 		controlXY(analogRead(xPinCtl), analogRead(yPinCtl));
-		//Auf Finalen Click warten
 		if (debug && myControlEvent != CLICK && myControlEvent != NONE && id != -1)
 			printWorld(myWorld[id]);
+		//Auf Finalen Click warten
 		if (myControlEvent != CLICK && waitForFinalClick)
 			myControlEvent = NONE;
 		//Taktung steuern
@@ -112,6 +114,11 @@ void gameCtl(bool solo = true) {
 	}
 	initWorld(0, player1);
 	initWorld(1, player2);
+
+	while (worldHasShips(1) && worldHasShips(2))
+	{
+
+	}
 }
 
 /* World Initializer */
@@ -125,6 +132,19 @@ void initWorld(int id, bool player) {
 		}
 	}
 	placeShips(id, player);
+}
+
+/* World ShipCheck */
+bool worldHasShips(int id) {
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 8; j++)
+		{
+			if (myWorld[id][i][j] == 1)
+				return true;
+		}
+	}
+	return false;
 }
 
 /* Place 6 ships per Player*/
@@ -170,19 +190,20 @@ bool placeShip(int id, int size, int xPos, int yPos, int dir) {
 	switch (dir) {
 	case LEFT:
 		x = -1;
-		canPlace = xPos - size > -1;
+		canPlace = (xPos - (size-1)) > -1;
 		break;
 	case RIGHT:
 		x = 1;
-		canPlace = xPos + size < 8;
+		canPlace = (xPos + (size - 1)) < 8;
 		break;
 	case DOWN:
 		y = -1;
-		canPlace = yPos - size > -1;
+		canPlace = (yPos - (size - 1)) > -1;
 		break;
 	case UP:
+	default:
 		y = 1;
-		canPlace = yPos + size < 8;
+		canPlace = (yPos + (size - 1)) < 8;
 		break;
 	}
 
@@ -211,26 +232,55 @@ void printLabeled(String name, int val) {
 }
 
 void printWorld(byte world[8][8]) {
-	Serial.println("####S####");
-	for (int i = 0; i < 8; i++)
+	int counter = 0;
+	byte worldStream[64]; // TOPLEFT to BOTRIGHT
+	if (debug)Serial.println("######8!");
+	for (int i = 7; i >= 0; i--)
 	{
 		for (int j = 0; j < 8; j++)
 		{
-			if (j == xPosCursor && i == yPosCursor)
-				Serial.print("X");
-			else
-				Serial.print(world[j][i]);
+			if (j == xPosCursor && i == yPosCursor) {
+				if (debug)Serial.print("X");
+				worldStream[counter] = 110;
+			}
+			else {
+				if (debug)Serial.print(world[j][i]);
+				worldStream[counter] = world[j][i];
+			}
+			counter++;
 		}
-		Serial.println();
+		if (debug)Serial.println();
 	}
-	Serial.println("####E####");
+	if (debug)Serial.println("!0######");
+}
+
+void playMissileSound(bool hit = false) {
+	// Pfeifen
+	for (int i = 3750; i > 2250; i -= 25)
+	{
+		tone(dPinBuzzer, i + random(-24, 0));
+		delay((i / random(160, 320)));
+	}
+	if (hit) {
+		for (int j = 0; j < 10; j++)
+		{
+			tone(dPinBuzzer, random(50, 150));
+			delay(random(30, 60));
+		}
+	}
+	noTone(dPinBuzzer);
 }
 
 /* Setup */
 void setup()
 {
+	//Not pressed Joystick = 1 on InputPin zPinCtl
 	pinMode(zPinCtl, INPUT);
 	digitalWrite(zPinCtl, HIGH);
+
+	//Buzzer
+	pinMode(dPinBuzzer, OUTPUT);
+
 	if (debug) Serial.begin(9600);
 }
 
@@ -247,5 +297,11 @@ void loop()
 	else if (myControlEvent == RIGHT) {
 		//Play Versus
 		gameCtl(false);
+	}
+	else if (myControlEvent == UP) {
+		playMissileSound();
+	}
+	else if (myControlEvent == DOWN) {
+		playMissileSound(true);
 	}
 }
