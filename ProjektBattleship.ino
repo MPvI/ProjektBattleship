@@ -100,6 +100,59 @@ int inputCtl(bool waitForFinalClick = false, int id = -1) {
 	return myControlEvent;
 }
 
+/* Sound Creator */
+void playMissileSound(bool hit = false) {
+  // Pfeifen
+  for (int i = 3750; i > 2250; i -= 25)
+  {
+    tone(dPinBuzzer, i + random(-24, 0));
+    delay((i / random(160, 320)));
+  }
+  if (hit) {
+    for (int j = 0; j < 10; j++)
+    {
+      tone(dPinBuzzer, random(50, 150));
+      delay(random(30, 60));
+    }
+  }
+  noTone(dPinBuzzer);
+}
+
+/* playGame */
+void fireMissile(int id, boolean ai)
+{
+  int myEnemyID;
+  // Wähle Feld auf Hitarray
+  if(id=0) 
+    myEnemyID = 1;
+  else if(id=1) 
+    myEnemyID = 0;
+
+  int myX;
+  int myY;
+
+  if(ai){
+    //TODO AI
+    while(myWorld[id+2][myX][myY]!=0){
+      myX = random(0,7);
+      myY = random(0,7);
+    }
+  }else{
+    inputCtl(true);
+    myX = xPosCursor;
+    myY = yPosCursor;
+  }
+
+  if(myWorld[myEnemyID][myX][myY]==1){
+    myWorld[myEnemyID][myX][myY]=2;
+    myWorld[id+2][myX][myY]=2;
+    playMissileSound(true);
+  }else{
+    myWorld[id+2][myX][myY]=1;
+    playMissileSound();
+  }
+}
+
 /* Game Controller */
 void gameCtl(bool solo = true) {
 	bool player1 = true;
@@ -117,7 +170,8 @@ void gameCtl(bool solo = true) {
 
 	while (worldHasShips(1) && worldHasShips(2))
 	{
-
+    fireMissile(0,player1);
+    fireMissile(1,player2);
 	}
 }
 
@@ -252,23 +306,6 @@ void printWorld(byte world[8][8]) {
 		if (debug)Serial.println();
 	}
 	if (debug)Serial.println("!0######");
-}
-
-void playMissileSound(bool hit = false) {
-	// Pfeifen
-	for (int i = 3750; i > 2250; i -= 25)
-	{
-		tone(dPinBuzzer, i + random(-24, 0));
-		delay((i / random(160, 320)));
-	}
-	if (hit) {
-		for (int j = 0; j < 10; j++)
-		{
-			tone(dPinBuzzer, random(50, 150));
-			delay(random(30, 60));
-		}
-	}
-	noTone(dPinBuzzer);
 }
 
 /* Setup */
