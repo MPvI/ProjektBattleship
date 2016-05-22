@@ -1,4 +1,23 @@
+#include "SPI.h"
+
+/*Variablen Deklaration*/
+/*Timer & LED*/
+volatile byte color = 0;
+volatile byte com = 1;
+byte my_green[8];
+byte my_red[8];
+byte my_blue[8];
+byte op_green[8];
+byte op_red[8];
+byte op_blue[8];
+byte ctrred = 0;
+
+const boolean DEMO = 1;
+/*Game*/
 const bool debug = true;
+bool sound = false;
+bool cursorOnHitMatrix = false;
+
 
 const int xPinCtl = A0;
 const int yPinCtl = A1;
@@ -80,6 +99,76 @@ void controlXY(int x, int y) {
 		ctlD();
 }
 
+void ledCtl(int id, bool player) {
+	if (!player || id==-1)return;
+
+	for (int i = 7; i >= 0; i--) {
+		my_red[i] = 0b11111111;
+		my_green[i] = 0b11111111;
+		my_blue[i] = 0b11111111;
+		op_red[i] = 0b11111111;
+		op_green[i] = 0b11111111;
+		op_blue[i] = 0b11111111;
+
+		for (int j = 0; j < 8; j++) {
+
+			if (!cursorOnHitMatrix && j == xPosCursor && i == yPosCursor) {
+				my_red[i] = (my_red[i] << 1) | 1;
+				my_green[i] = (my_green[i] << 1) | 1;
+				my_blue[i] = (my_blue[i] << 1) | 1;
+			}
+			else {
+				switch (myWorld[id][j][i])
+				{
+				case 2: // kaputtes Schiff
+					my_red[i] = (my_red[i] << 1) | 1;
+					my_green[i] = (my_green[i] << 1) | 1;
+					my_blue[i] = (my_blue[i] << 1) | 0;
+					break;
+				case 1: // Schiff
+					my_red[i] = (my_red[i] << 1) | 0;
+					my_green[i] = (my_green[i] << 1) | 1;
+					my_blue[i] = (my_blue[i] << 1) | 0;
+					break;
+				case 0: // Wasser
+				default:
+					my_red[i] = (my_red[i] << 1) | 0;
+					my_green[i] = (my_green[i] << 1) | 0;
+					my_blue[i] = (my_blue[i] << 1) | 1;
+					break;
+				}
+			}
+
+			if (cursorOnHitMatrix && j == xPosCursor && i == yPosCursor) {
+				op_red[i] = (op_red[i] << 1) | 1;
+				op_green[i] = (op_green[i] << 1) | 1;
+				op_blue[i] = (op_blue[i] << 1) | 1;
+			}
+			else {
+				switch (myWorld[id + 2][j][i])
+				{
+				case 2: // Treffer
+					op_red[i] = (op_red[i] << 1) | 1;
+					op_green[i] = (op_green[i] << 1) | 0;
+					op_blue[i] = (op_blue[i] << 1) | 0;
+					break;
+				case 1: // Pumpe
+					op_red[i] = (op_red[i] << 1) | 0;
+					op_green[i] = (op_green[i] << 1) | 1;
+					op_blue[i] = (op_blue[i] << 1) | 0;
+					break;
+				case 0: // Wasser
+				default:
+					op_red[i] = (op_red[i] << 1) | 0;
+					op_green[i] = (op_green[i] << 1) | 0;
+					op_blue[i] = (op_blue[i] << 1) | 1;
+					break;
+				}
+			}
+		}
+	}
+}
+
 /* Input Controller */
 int inputCtl(bool waitForFinalClick = false, int id = -1) {
 	myControlEvent = NONE;
@@ -96,6 +185,7 @@ int inputCtl(bool waitForFinalClick = false, int id = -1) {
 			myControlEvent = NONE;
 		//Taktung steuern
 		delay(1000 / ticksPerSecond);
+		ledCtl(id, true);
 	}
 	return myControlEvent;
 }
@@ -119,26 +209,26 @@ void playMissileSound(bool hit = false) {
 }
 
 /* playGame */
-void fireMissile(int id, boolean ai)
+void fireMissile(int id, boolean player)
 {
   int myEnemyID;
   // Wähle Feld auf Hitarray
-  if(id=0) 
+  if(id==0) 
     myEnemyID = 1;
-  else if(id=1) 
+  else if(id==1) 
     myEnemyID = 0;
 
   int myX;
   int myY;
 
-  if(ai){
+  if(!player){
     //TODO AI
-    while(myWorld[id+2][myX][myY]!=0){
+    do{
       myX = random(0,7);
       myY = random(0,7);
-    }
+	} while (myWorld[id + 2][myX][myY] != 0);
   }else{
-    inputCtl(true);
+    inputCtl(true,id+2);
     myX = xPosCursor;
     myY = yPosCursor;
   }
@@ -146,10 +236,10 @@ void fireMissile(int id, boolean ai)
   if(myWorld[myEnemyID][myX][myY]==1){
     myWorld[myEnemyID][myX][myY]=2;
     myWorld[id+2][myX][myY]=2;
-    playMissileSound(true);
+    if(sound)playMissileSound(true);
   }else{
     myWorld[id+2][myX][myY]=1;
-    playMissileSound();
+    if(sound)playMissileSound();
   }
 }
 
@@ -158,21 +248,23 @@ void gameCtl(bool solo = true) {
 	bool player1 = true;
 	bool player2;
 	if (solo) {
-		Serial.println("I'm in Solo Mode");
+		if(debug)Serial.println("I'm in Solo Mode");
 		player2 = false;
 	}
 	else {
-		Serial.println("I'm in Versus Mode");
+		if (debug)Serial.println("I'm in Versus Mode");
 		player2 = true;
 	}
 	initWorld(0, player1);
 	initWorld(1, player2);
-
-	while (worldHasShips(1) && worldHasShips(2))
+	cursorOnHitMatrix = true;
+	while (worldHasShips(0) && worldHasShips(1))
 	{
     fireMissile(0,player1);
+	delay(750);
     fireMissile(1,player2);
 	}
+	cursorOnHitMatrix = false;
 }
 
 /* World Initializer */
@@ -213,27 +305,38 @@ void placeShips(int id, bool player) {
 	}
 	else {
 		//TODO AI
-		placeShip(id, 4, 2, 2, RIGHT);
-		placeShip(id, 4, 2, 2, LEFT);
-		placeShip(id, 3, 2, 2, UP);
-		placeShip(id, 3, 2, 2, UP);
-		placeShip(id, 2, 2, 2, UP);
-		placeShip(id, 2, 2, 2, UP);
+		placeAIShip(id, 4);
+		placeAIShip(id, 4);
+		placeAIShip(id, 3);
+		placeAIShip(id, 3);
+		placeAIShip(id, 2);
+		placeAIShip(id, 2);
 	}
 }
 
 /* Inputwrapper for placing a player ship with placeShip*/
 void placePlayerShip(int id, int size) {
-	Serial.println("Richtung:");
+	if (debug)Serial.println("Richtung:");
 	cursorLocked = true;
 	int dir = inputCtl();
 	cursorLocked = false;
 	bool placed = false;
 	while (!placed) {
-		Serial.println("Position:");
+		if (debug)Serial.println("Position:");
 		inputCtl(true, id);
 		placed = placeShip(id, size, xPosCursor, yPosCursor, dir);
 	}
+}
+
+void placeAIShip(int id, int size) {
+	int myX;
+	int myY;
+	int myDir;
+	do {
+		myX = random(0, 7);
+		myY = random(0, 7);
+		myDir = random(LEFT, UP);
+	} while (!placeShip(id, size, myX, myY, myDir));
 }
 
 /* Place a single ship, check for other ships and borders*/
@@ -286,24 +389,28 @@ void printLabeled(String name, int val) {
 }
 
 void printWorld(byte world[8][8]) {
-	int counter = 0;
-	byte worldStream[64]; // TOPLEFT to BOTRIGHT
 	if (debug)Serial.println("######8!");
 	for (int i = 7; i >= 0; i--)
 	{
-		for (int j = 0; j < 8; j++)
-		{
-			if (j == xPosCursor && i == yPosCursor) {
-				if (debug)Serial.print("X");
-				worldStream[counter] = 110;
+		if (debug) {
+			for (int j = 0; j < 8; j++)
+			{
+				if (j == xPosCursor && i == yPosCursor) {
+					if (debug)Serial.print("x");
+				}
+				else {
+					if (debug)Serial.print(world[j][i]);
+				}
 			}
-			else {
-				if (debug)Serial.print(world[j][i]);
-				worldStream[counter] = world[j][i];
-			}
-			counter++;
+			if (debug)Serial.println();
 		}
-		if (debug)Serial.println();
+		
+			printLabeled("R", my_red[i]);
+			printLabeled("G", my_green[i]);
+			printLabeled("B", my_blue[i]);
+			printLabeled("xPos", xPosCursor);
+			printLabeled("yPos", yPosCursor);
+		
 	}
 	if (debug)Serial.println("!0######");
 }
@@ -311,6 +418,51 @@ void printWorld(byte world[8][8]) {
 /* Setup */
 void setup()
 {
+	/*----------------------Interrupt Initialisierung--------------------*/
+	// pinMode(13, OUTPUT);
+	cli();//Interrupts verbieten (CLear Interrupts)
+
+		  //Timer 1 inititalisieren
+	TCCR1A = 0; //Quelle: Systemtakt (=16MHz)
+	TCCR1B = 0; //Zählwert: 0
+	TCNT1 = 0; //Modus: Default
+
+			   //Vergleichsregister initialisieren (kleinerer Wert = häufigere Interrupts)
+			   //Wert wird/wurde experimentell ermittelt
+	OCR1A = 10;
+
+	//Bit-gehacke um die Flags im TCCR1B-Register zu setzen
+	//TCCR1B = TCCR1B | (1 << $name_einer_Konstante) 
+	//1 wird an die entsprechende Stelle geschoben, dann mit dem Registerinhalt bitweise verodert und ins Register geschrieben
+	TCCR1B |= (1 << WGM12); //CTC-Modus aktivieren
+	TCCR1B |= (1 << CS12) | (1 << CS10);  //prescaler =1024
+	TIMSK1 |= (1 << OCIE1A); //Timer Compare Interrupt einschalten 
+
+	sei();//Interrupts erlauben (SEt Interrupts)
+		  /*----------------------Ende Interrupt Initialisierung----------------*/
+
+		  /*----------------------SPI Initialisierung---------------------------*/
+	SPI.begin();
+	SPI.setDataMode(SPI_MODE0);
+	SPI.setBitOrder(MSBFIRST);
+
+	/*----------------------Ende SPI Initialisierung----------------------*/
+	com = 1;
+	color = 0;
+	/*Display-Demo-Daten*/
+	//Anzeige testen....
+	if (DEMO) {
+		for (int i = 0; i<8; i++) {
+			my_green[i] = 0b10110111;
+			my_red[i] = 0b11111111;
+			my_green[i] = 0b11100100;
+			op_green[i] = 0x8E;
+			op_red[i] = 0x70;
+			op_blue[i] = 0x22;
+		}
+	}
+	/*ende Display-Demo-Daten*/
+
 	//Not pressed Joystick = 1 on InputPin zPinCtl
 	pinMode(zPinCtl, INPUT);
 	digitalWrite(zPinCtl, HIGH);
@@ -336,9 +488,55 @@ void loop()
 		gameCtl(false);
 	}
 	else if (myControlEvent == UP) {
-		playMissileSound();
+		sound = !sound;
 	}
 	else if (myControlEvent == DOWN) {
 		playMissileSound(true);
 	}
+}
+
+/*----------------------Interrupt Routine----------------------------*/
+/*  Zeilenweises Ansteuern der RGB-LED-Matritzen via Schieberegister
+*   (8* 74hc595) Reihenfolge:
+*   Arduino -> op_blue -> op_red -> op_green -> com_Anode -> my_blue ->
+*   my_red -> my_green -> com_Anode
+*
+*   Zeilenweises, synchrones durchgehen der Matritzen
+*   => Reihenfolge der Ausgabe
+*   Zeile i - my_green - my_red - my_blue - Zeile i - op_green - op_red - op_blue
+*
+*  mosi(11) auf data(weiss)
+*  sck(13) auf sh_cp(gruen)
+*  ss(10) auf st_cp(gelb/grau)
+*  ctrred: counter damit rot nicht jeden Durchlauf angesteuert wird, ist sonst zu hell.
+*/
+ISR(TIMER1_COMPA_vect) {
+	digitalWrite(10, LOW); //Schieberegister Ausgang blocken
+						   //Daten schieben
+	SPI.transfer(0x02);
+	SPI.transfer(my_green[color]);
+	if (ctrred == 3) {
+		SPI.transfer(my_red[color]);
+	}
+	else {
+		SPI.transfer(0xFF);
+	}
+	SPI.transfer(my_blue[color]);
+	SPI.transfer(com);
+	SPI.transfer(op_green[color]);
+	if (ctrred == 3) {
+		SPI.transfer(op_red[color]);
+		ctrred = 0;
+	}
+	else {
+		SPI.transfer(0xFF);
+	}
+	ctrred++;
+	SPI.transfer(op_blue[color]);
+	//Ende Daten schieben
+	digitalWrite(10, HIGH); //Schieberegister Ausgang aktivieren (= neue Anzeige wird geschaltet)
+
+	color++; //naechste Zeile Farben
+	if (color >= 8) color = 0; //letzte Zeile Farben -> erste Zeile Farben
+	com = 1 << color; //Ansteuerung fuer gemeinsame Zeile
 }
