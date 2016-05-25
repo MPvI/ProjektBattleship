@@ -12,11 +12,15 @@ byte op_red[8];
 byte op_blue[8];
 byte ctrred = 0;
 
-const boolean DEMO = 1;
+const boolean DEMO = 0;
 /*Game*/
+const bool oneMatrixMode = true;
 const bool debug = true;
 bool sound = false;
 bool cursorOnHitMatrix = false;
+bool currentID;
+bool currentPlayer;
+
 
 
 const int xPinCtl = A0;
@@ -99,75 +103,78 @@ void controlXY(int x, int y) {
 		ctlD();
 }
 
-void ledCtl(int id, bool player) {
-	if (!player || id==-1)return;
+void ledCtl() {
+	if (!currentPlayer || currentID==-1)return;
+	// Shift wegen LED-Reihen vertauscht
+	setLedRow(0,0);
+	setLedRow(1,1);
+	setLedRow(3,2);
+	setLedRow(2,3);
+	setLedRow(4,4);
+	setLedRow(5,5);
+	setLedRow(7,6);
+	setLedRow(6,7);
+}
 
-	for (int i = 7; i >= 0; i--) {
-		my_red[i] = 0b11111111;
-		my_green[i] = 0b11111111;
-		my_blue[i] = 0b11111111;
-		op_red[i] = 0b11111111;
-		op_green[i] = 0b11111111;
-		op_blue[i] = 0b11111111;
-
-		for (int j = 0; j < 8; j++) {
-
-			if (!cursorOnHitMatrix && j == xPosCursor && i == yPosCursor) {
-				my_red[i] = (my_red[i] << 1) | 1;
-				my_green[i] = (my_green[i] << 1) | 1;
-				my_blue[i] = (my_blue[i] << 1) | 1;
-			}
-			else {
-				switch (myWorld[id][j][i])
-				{
-				case 2: // kaputtes Schiff
-					my_red[i] = (my_red[i] << 1) | 1;
-					my_green[i] = (my_green[i] << 1) | 1;
-					my_blue[i] = (my_blue[i] << 1) | 0;
-					break;
-				case 1: // Schiff
-					my_red[i] = (my_red[i] << 1) | 0;
-					my_green[i] = (my_green[i] << 1) | 1;
-					my_blue[i] = (my_blue[i] << 1) | 0;
-					break;
-				case 0: // Wasser
-				default:
-					my_red[i] = (my_red[i] << 1) | 0;
-					my_green[i] = (my_green[i] << 1) | 0;
-					my_blue[i] = (my_blue[i] << 1) | 1;
-					break;
-				}
-			}
-
-			if (cursorOnHitMatrix && j == xPosCursor && i == yPosCursor) {
-				op_red[i] = (op_red[i] << 1) | 1;
-				op_green[i] = (op_green[i] << 1) | 1;
-				op_blue[i] = (op_blue[i] << 1) | 1;
-			}
-			else {
-				switch (myWorld[id + 2][j][i])
-				{
-				case 2: // Treffer
-					op_red[i] = (op_red[i] << 1) | 1;
-					op_green[i] = (op_green[i] << 1) | 0;
-					op_blue[i] = (op_blue[i] << 1) | 0;
-					break;
-				case 1: // Pumpe
-					op_red[i] = (op_red[i] << 1) | 0;
-					op_green[i] = (op_green[i] << 1) | 1;
-					op_blue[i] = (op_blue[i] << 1) | 0;
-					break;
-				case 0: // Wasser
-				default:
-					op_red[i] = (op_red[i] << 1) | 0;
-					op_green[i] = (op_green[i] << 1) | 0;
-					op_blue[i] = (op_blue[i] << 1) | 1;
-					break;
-				}
-			}
+void setWorldLedMatrix(byte &red, byte &green, byte &blue, int j, int s) {
+	if (!cursorOnHitMatrix && j == xPosCursor && s == yPosCursor) {
+		red -= (1 << j);
+		blue -= (1 << j);
+	}
+	else {
+		switch (myWorld[currentID][j][s])
+		{
+		case 2: // kaputtes Schiff
+			red -= (1 << j);
+			break;
+		case 1: // Schiff
+			green -= (1 << j);
+			break;
+		case 0: // Wasser
+		default:
+			blue -= (1 << j);
+			break;
 		}
 	}
 }
+
+void setHitLedMatrix(byte &red, byte &green, byte &blue, int j, int s) {
+	if (cursorOnHitMatrix && j == xPosCursor && s == yPosCursor) {
+		red -= (1 << j);
+		blue -= (1 << j);
+	}
+	else {
+		switch (myWorld[currentID + 2][j][s])
+		{
+		case 2: // Treffer
+			red -= (1 << j);
+			break;
+		case 1: // Pumpe
+			green -= (1 << j);
+			break;
+		case 0: // Wasser
+		default:
+			blue -= (1 << j);
+			break;
+		}
+	}
+}
+
+void setLedRow(int i,int s) {
+	my_red[i] = (byte)255;
+	my_green[i] = (byte)255;
+	my_blue[i] = (byte)255;
+	op_red[i] = (byte)255;
+	op_green[i] = (byte)255;
+	op_blue[i] = (byte)255;
+
+	for (int j = 0; j < 8; j++) {
+		setWorldLedMatrix(op_red[i], op_green[i], op_blue[i], j, s);
+		setHitLedMatrix(my_red[i], my_green[i], my_blue[i], j, s);
+	}
+}
+
+void setMenuInWorld() {}
 
 /* Input Controller */
 int inputCtl(bool waitForFinalClick = false, int id = -1) {
@@ -185,7 +192,6 @@ int inputCtl(bool waitForFinalClick = false, int id = -1) {
 			myControlEvent = NONE;
 		//Taktung steuern
 		delay(1000 / ticksPerSecond);
-		ledCtl(id, true);
 	}
 	return myControlEvent;
 }
@@ -211,36 +217,39 @@ void playMissileSound(bool hit = false) {
 /* playGame */
 void fireMissile(int id, boolean player)
 {
-  int myEnemyID;
-  // Wähle Feld auf Hitarray
-  if(id==0) 
-    myEnemyID = 1;
-  else if(id==1) 
-    myEnemyID = 0;
+	setIDandPlayer(id, player);
+	int myEnemyID;
+	// Wähle Feld auf Hitarray
+	if (id == 0)
+		myEnemyID = 1;
+	else if (id == 1)
+		myEnemyID = 0;
 
-  int myX;
-  int myY;
+	int myX;
+	int myY;
 
-  if(!player){
-    //TODO AI
-    do{
-      myX = random(0,7);
-      myY = random(0,7);
-	} while (myWorld[id + 2][myX][myY] != 0);
-  }else{
-    inputCtl(true,id+2);
-    myX = xPosCursor;
-    myY = yPosCursor;
-  }
+	if (!player) {
+		//TODO AI
+		do {
+			myX = random(0, 7);
+			myY = random(0, 7);
+		} while (myWorld[id + 2][myX][myY] != 0);
+	}
+	else {
+		inputCtl(true, id + 2);
+		myX = xPosCursor;
+		myY = yPosCursor;
+	}
 
-  if(myWorld[myEnemyID][myX][myY]==1){
-    myWorld[myEnemyID][myX][myY]=2;
-    myWorld[id+2][myX][myY]=2;
-    if(sound)playMissileSound(true);
-  }else{
-    myWorld[id+2][myX][myY]=1;
-    if(sound)playMissileSound();
-  }
+	if (myWorld[myEnemyID][myX][myY] == 1) {
+		myWorld[myEnemyID][myX][myY] = 2;
+		myWorld[id + 2][myX][myY] = 2;
+		if (sound)playMissileSound(true);
+	}
+	else {
+		myWorld[id + 2][myX][myY] = 1;
+		if (sound)playMissileSound();
+	}
 }
 
 /* Game Controller */
@@ -255,8 +264,10 @@ void gameCtl(bool solo = true) {
 		if (debug)Serial.println("I'm in Versus Mode");
 		player2 = true;
 	}
+
 	initWorld(0, player1);
 	initWorld(1, player2);
+
 	cursorOnHitMatrix = true;
 	while (worldHasShips(0) && worldHasShips(1))
 	{
@@ -267,8 +278,14 @@ void gameCtl(bool solo = true) {
 	cursorOnHitMatrix = false;
 }
 
+void setIDandPlayer(int id, bool player) {
+	currentID = id;
+	currentPlayer = player;
+}
+
 /* World Initializer */
 void initWorld(int id, bool player) {
+	setIDandPlayer(id, player);
 	for (int i = 0; i < 8; i++)
 	{
 		for (int j = 0; j < 8; j++)
@@ -364,10 +381,23 @@ bool placeShip(int id, int size, int xPos, int yPos, int dir) {
 		break;
 	}
 
-	for (int s = 0; s < size; s++)
+	/*
+		# = Ship
+		O = CheckArea
+		
+		Example Ship Size = 3
+
+		OOOOO
+		O###O
+		OOOOO
+	*/
+	for (int s = -1; s <= size; s++)
 	{
-		if (myWorld[id][xPos + (x*s)][yPos + (y*s)] != 0)
-			canPlace = false;
+		for (int drift = -1; drift <= 1; drift++)
+		{
+			if (myWorld[id][limit(xPos + (y*drift) + (x*s))][limit(yPos + (x*drift) + (y*s))] != 0)
+				canPlace = false;
+		}
 	}
 
 	if (canPlace) {
@@ -380,6 +410,13 @@ bool placeShip(int id, int size, int xPos, int yPos, int dir) {
 	else {
 		return false;
 	}
+}
+
+int limit(int val) {
+	if (val > 7)
+		return 7;
+	if (val < 0)
+		return 0;
 }
 
 //LED Ersatzfunktionen
@@ -511,6 +548,7 @@ void loop()
 *  ctrred: counter damit rot nicht jeden Durchlauf angesteuert wird, ist sonst zu hell.
 */
 ISR(TIMER1_COMPA_vect) {
+	ledCtl();
 	digitalWrite(10, LOW); //Schieberegister Ausgang blocken
 						   //Daten schieben
 	SPI.transfer(0x02);
