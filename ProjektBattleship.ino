@@ -11,7 +11,7 @@
 
 /* Debug Options */
 const bool oneMatrixMode = true;
-const bool debug = true;
+const bool debug = false;
 const bool displayDemo = false;
 
 /* Interrupt Variables*/
@@ -47,7 +47,7 @@ int yPosCursor = 0;
 // 6 World Dimensions - World1,World2,Hit1,Hit2,Reg1,Reg2
 byte myWorld[6][8][8];
 // Ships left on Fields
-bool shipsLeft[2][6] = { { true,true,true,true,true,true },{ true,true,true, true,true,true } };
+bool shipsLeft[2][6] = { { true,true,true,true,true,true },{ true,true,true,true,true,true } };
 
 bool cursorLocked = false;
 bool sound = false;
@@ -355,25 +355,23 @@ void shipDestroyed() {
 /* Game Controller */
 void gameCtl(bool solo = true) {
 	bool player1 = true;
-	bool player2;
-	if (solo) {
-		if(debug)Serial.println("I'm in Solo Mode");
-		player2 = false;
-	}
-	else {
-		if (debug)Serial.println("I'm in Versus Mode");
-		player2 = true;
-	}
+	bool player2 = !solo;
+
+	if (debug)Serial.println(solo ? "1-Spieler-Modus" : "2-Spieler-Modus");
 
 	initWorld(0, player1);
 	initWorld(1, player2);
 
 	cursorOnHitMatrix = true;
-	while (worldHasShips(0) && worldHasShips(1))
+
+	bool gameIsRunning = true;
+	while (gameIsRunning)
 	{
     fireMissile(0,player1);
+	gameIsRunning = worldHasShips(1) && worldHasShips(0);
 	delay(750);
     fireMissile(1,player2);
+	gameIsRunning = worldHasShips(0) && worldHasShips(1);
 	}
 	cursorOnHitMatrix = false;
 	if (debug) {
