@@ -1,9 +1,24 @@
 #include "SPI.h"
 
-/*Variablen Deklaration*/
-/*Timer & LED*/
+/*
+	Projekt: Battleship
+
+	Marcus Siesenop
+	Mattheus van Iterson
+*/
+
+/*Variablen Deklaration & Initialisierung*/
+
+/* Debug Options */
+const bool oneMatrixMode = true;
+const bool debug = true;
+const bool displayDemo = false;
+
+/* Interrupt Variables*/
 volatile byte color = 0;
 volatile byte com = 1;
+
+/* RGB Storage for World and Hit Matrix Displays */
 byte my_green[8];
 byte my_red[8];
 byte my_blue[8];
@@ -12,30 +27,38 @@ byte op_red[8];
 byte op_blue[8];
 byte ctrred = 0;
 
-const boolean DEMO = 0;
-/*Game*/
-const bool oneMatrixMode = true;
-const bool debug = true;
-bool sound = false;
-bool cursorOnHitMatrix = false;
-bool currentID;
-bool currentPlayer;
-
-
-
+/* Hardware/Pin Configuration*/
 const int xPinCtl = A0;
 const int yPinCtl = A1;
 const int zPinCtl = 8;
-
 const int dPinBuzzer = 7;
+const int dPinRegisterOut = 10;
 
-const int ticksPerSecond = 5;
+/* Game Configuration */
+const int ticksPerSecond = 8;
 const int sensiCtl = 4;
 
-// 4 World Dimensions - World1,World2,Hit1,Hit2
-byte myWorld[4][8][8];
 
-/* Controller Helper */
+/* Game Run Variables */
+// Cursor Position
+int xPosCursor = 0;
+int yPosCursor = 0;
+// 6 World Dimensions - World1,World2,Hit1,Hit2,Reg1,Reg2
+byte myWorld[6][8][8];
+// Ships left on Fields
+bool shipsLeft[2][6] = { { true,true,true,true,true,true },{ true,true,true, true,true,true } };
+
+bool cursorLocked = false;
+bool soundE = false;
+bool cursorOnHitMatrix = false;
+bool isCursorPos;
+bool currentID;
+bool currentPlayer;
+
+/*-------------------------------------------------------------------*/
+/* #START Input Controller & Input Helper */
+
+/* Enum for Directions */
 enum ControlEvents
 {
 	NONE,
@@ -47,10 +70,6 @@ enum ControlEvents
 };
 
 ControlEvents myControlEvent = NONE;
-
-int xPosCursor = 0;
-int yPosCursor = 0;
-bool cursorLocked = false;
 
 /* ControllerEventCallbacks Left,Right,Down,Up,Click,None */
 void ctlL() {
@@ -103,79 +122,6 @@ void controlXY(int x, int y) {
 		ctlD();
 }
 
-void ledCtl() {
-	if (!currentPlayer || currentID==-1)return;
-	// Shift wegen LED-Reihen vertauscht
-	setLedRow(0,0);
-	setLedRow(1,1);
-	setLedRow(3,2);
-	setLedRow(2,3);
-	setLedRow(4,4);
-	setLedRow(5,5);
-	setLedRow(7,6);
-	setLedRow(6,7);
-}
-
-void setWorldLedMatrix(byte &red, byte &green, byte &blue, int j, int s) {
-	if (!cursorOnHitMatrix && j == xPosCursor && s == yPosCursor) {
-		red -= (1 << j);
-		blue -= (1 << j);
-	}
-	else {
-		switch (myWorld[currentID][j][s])
-		{
-		case 2: // kaputtes Schiff
-			red -= (1 << j);
-			break;
-		case 1: // Schiff
-			green -= (1 << j);
-			break;
-		case 0: // Wasser
-		default:
-			blue -= (1 << j);
-			break;
-		}
-	}
-}
-
-void setHitLedMatrix(byte &red, byte &green, byte &blue, int j, int s) {
-	if (cursorOnHitMatrix && j == xPosCursor && s == yPosCursor) {
-		red -= (1 << j);
-		blue -= (1 << j);
-	}
-	else {
-		switch (myWorld[currentID + 2][j][s])
-		{
-		case 2: // Treffer
-			red -= (1 << j);
-			break;
-		case 1: // Pumpe
-			green -= (1 << j);
-			break;
-		case 0: // Wasser
-		default:
-			blue -= (1 << j);
-			break;
-		}
-	}
-}
-
-void setLedRow(int i,int s) {
-	my_red[i] = (byte)255;
-	my_green[i] = (byte)255;
-	my_blue[i] = (byte)255;
-	op_red[i] = (byte)255;
-	op_green[i] = (byte)255;
-	op_blue[i] = (byte)255;
-
-	for (int j = 0; j < 8; j++) {
-		setWorldLedMatrix(op_red[i], op_green[i], op_blue[i], j, s);
-		setHitLedMatrix(my_red[i], my_green[i], my_blue[i], j, s);
-	}
-}
-
-void setMenuInWorld() {}
-
 /* Input Controller */
 int inputCtl(bool waitForFinalClick = false, int id = -1) {
 	myControlEvent = NONE;
@@ -196,24 +142,281 @@ int inputCtl(bool waitForFinalClick = false, int id = -1) {
 	return myControlEvent;
 }
 
-/* Sound Creator */
-void playMissileSound(bool hit = false) {
-  // Pfeifen
-  for (int i = 3750; i > 2250; i -= 25)
-  {
-    tone(dPinBuzzer, i + random(-24, 0));
-    delay((i / random(160, 320)));
-  }
-  if (hit) {
-    for (int j = 0; j < 10; j++)
-    {
-      tone(dPinBuzzer, random(50, 150));
-      delay(random(30, 60));
-    }
-  }
-  noTone(dPinBuzzer);
+/* #END Input Controller & Input Helper */
+/*-------------------------------------------------------------------*/
+
+
+
+/*-------------------------------------------------------------------*/
+/* #START Display & Sound Helper */
+
+/* Control LEDs with shift*/
+void ledCtl() {
+	if (!currentPlayer || currentID==-1)return;
+	// Shift wegen LED-Reihen vertauscht
+	setLedRow(0,0);
+	setLedRow(1,1);
+	setLedRow(3,2);
+	setLedRow(2,3);
+	setLedRow(4,4);
+	setLedRow(5,5);
+	setLedRow(7,6);
+	setLedRow(6,7);
 }
 
+/* set RGB for a single Row with custom row shift*/
+void setLedRow(int i,int s) {
+	my_red[i] = (byte)255;
+	my_green[i] = (byte)255;
+	my_blue[i] = (byte)255;
+	op_red[i] = (byte)255;
+	op_green[i] = (byte)255;
+	op_blue[i] = (byte)255;
+
+	// Locked Cursor Helper
+
+	for (int j = 0; j < 8; j++) {
+		//World
+		isCursorPos = (cursorLocked && ((j == xPosCursor - 1 && s == yPosCursor) || (j == xPosCursor + 1 && s == yPosCursor) || (j == xPosCursor && s == yPosCursor + 1) || (j == xPosCursor && s == yPosCursor - 1))) || (!cursorLocked && (j == xPosCursor && s == yPosCursor));
+
+		if (!cursorOnHitMatrix && isCursorPos) {
+			my_red[i] -= (1 << j);
+			my_blue[i] -= (1 << j);
+		}
+		else {
+			switch (myWorld[currentID][j][s])
+			{
+			case 2: // kaputtes Schiff
+				my_red[i] -= (1 << j);
+				break;
+			case 1: // Schiff
+				my_green[i] -= (1 << j);
+				break;
+			case 0: // Wasser
+			default:
+				my_blue[i] -= (1 << j);
+				break;
+			}
+		}
+
+		//Hit
+		if (cursorOnHitMatrix && j == xPosCursor && s == yPosCursor) {
+			op_red[i] -= (1 << j);
+			op_blue[i] -= (1 << j);
+		}
+		else {
+			switch (myWorld[currentID + 2][j][s])
+			{
+			case 2: // Treffer
+				op_red[i] -= (1 << j);
+				break;
+			case 1: // Pumpe
+				op_green[i] -= (1 << j);
+				break;
+			case 0: // Wasser
+			default:
+				op_blue[i] -= (1 << j);
+				break;
+			}
+		}
+	}
+}
+
+/* Startmenu */
+void chooseMenu(int menuPoint) {
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 8; j++)
+		{
+			myWorld[0][i][j] = 0;
+		}
+
+	}
+	if (menuPoint == 0) {
+		const byte anzahlMappings = 17;
+		byte xMapping[] = { 1,1,1,1,1,2,3,4,4,4,4,4,6,6,6,6 };
+		byte yMapping[] = { 2,3,4,5,6,4,4,2,3,4,5,6,2,3,4,6 };
+		for (int n = 0; n < anzahlMappings; n++)
+		{
+			for (int i = 0; i < 8; i++)
+			{
+				for (int j = 0; j < 8; j++)
+				{
+					if (i == xMapping[n] && j == yMapping[n])
+						if(sound)
+							myWorld[0][i][j] = 1;
+						else
+							myWorld[0][i][j] = 2;
+				}
+			}
+		}
+	}
+	else if (menuPoint == 1) {
+		const byte anzahlMappings = 11;
+		byte xMapping[] = { 4,3,2,2,2,3,4,4,4,3,2 };
+		byte yMapping[] = { 5,5,5,4,3,3,3,2,1,1,1 };
+		for (int n = 0; n < anzahlMappings; n++)
+		{
+			for (int i = 0; i < 8; i++)
+			{
+				for (int j = 0; j < 8; j++)
+				{
+					if (i == xMapping[n] && j == yMapping[n])
+						myWorld[0][i][j] = 1;
+				}
+			}
+		}
+	}
+	else if (menuPoint == 2) {
+		const byte anzahlMappings = 12;
+		byte xMapping[anzahlMappings] = { 1,1,1,2,2,3,4,5,5,6,6,6 };
+		byte yMapping[anzahlMappings] = { 6,5,4,3,2,1,1,2,3,4,5,6 };
+		for (int n = 0; n < anzahlMappings; n++)
+		{
+			for (int i = 0; i < 8; i++)
+			{
+				for (int j = 0; j < 8; j++)
+				{
+					if (i == xMapping[n] && j == yMapping[n])
+						myWorld[0][i][j] = 1;
+				}
+			}
+		}
+	}
+	else if (menuPoint == 3) {
+		const byte anzahlMappings = 20;
+		byte xMapping[anzahlMappings] = { 0,0,1,1,2,2,3,3,3,3,3,3,5,5,6,6,7,7,7,7 };
+		byte yMapping[anzahlMappings] = { 3,4,3,4,2,5,6,1,5,2,4,3,3,4,1,6,3,4,2,5 };
+		for (int n = 0; n < anzahlMappings; n++)
+		{
+			for (int i = 0; i < 8; i++)
+			{
+				for (int j = 0; j < 8; j++)
+				{
+					if (i == xMapping[n] && j == yMapping[n])
+						myWorld[0][i][j] = 1;
+				}
+			}
+		}
+	}
+	else if (menuPoint == 4) {
+		const byte anzahlMappings = 12;
+		byte xMapping[anzahlMappings] = { 0,0,1,1,2,2,3,3,3,3,3,3};
+		byte yMapping[anzahlMappings] = { 3,4,3,4,2,5,6,1,5,2,4,3};
+		for (int n = 0; n < anzahlMappings; n++)
+		{
+			for (int i = 0; i < 8; i++)
+			{
+				for (int j = 0; j < 8; j++)
+				{
+					if (i == xMapping[n] && j == yMapping[n])
+						myWorld[0][i][j] = 1;
+				}
+			}
+		}
+	}
+}
+
+/* Sound Creator */
+/* Rocket Sound */
+void playMissileSound(bool hit = false) {
+	// Pfeifen
+	for (int i = 3750; i > 2250; i -= 25)
+	{
+		tone(dPinBuzzer, i + random(-24, 0));
+		delay((i / random(160, 320)));
+	}
+	if (hit) {
+		for (int j = 0; j < 10; j++)
+		{
+			tone(dPinBuzzer, random(50, 150));
+			delay(random(30, 60));
+		}
+	}
+	noTone(dPinBuzzer);
+}
+
+/* Ship Destruction Buzz*/
+void shipDestroyed() {
+	tone(dPinBuzzer, 3000, 100);
+	delay(150);
+	noTone(dPinBuzzer);
+}
+
+/* #END World Initializer Helper */
+/*-------------------------------------------------------------------*/
+
+
+
+/*-------------------------------------------------------------------*/
+/* #START Game Controller & Game Helper */
+
+/* Game Controller */
+void gameCtl(bool solo = true) {
+	bool player1 = true;
+	bool player2;
+	if (solo) {
+		if(debug)Serial.println("I'm in Solo Mode");
+		player2 = false;
+	}
+	else {
+		if (debug)Serial.println("I'm in Versus Mode");
+		player2 = true;
+	}
+
+	initWorld(0, player1);
+	initWorld(1, player2);
+
+	cursorOnHitMatrix = true;
+	while (worldHasShips(0) && worldHasShips(1))
+	{
+    fireMissile(0,player1);
+	delay(750);
+    fireMissile(1,player2);
+	}
+	cursorOnHitMatrix = false;
+	if (debug) {
+		if (worldHasShips(0))
+			Serial.println("Spieler 1 gewinnt!");
+		if (worldHasShips(1))
+			Serial.println("Spieler 2 gewinnt!");
+	}
+}
+
+/* Set the ID and Type of current player */
+void setIDandPlayer(int id, bool player) {
+	currentID = id;
+	currentPlayer = player;
+}
+
+/* World ShipCheck */
+bool worldHasShips(int id) {
+	bool shipsLeftCheck[6] = { false,false,false,false,false,false };
+	for (int i = 0; i < 8; i++)
+	{
+		for (int j = 0; j < 8; j++)
+		{
+			for (int k = 1; k < 7; k++)
+			{
+				if(myWorld[id + 4][i][j] == k)
+					shipsLeftCheck[k-1] = true;
+			}
+		}
+	}
+	for (int k = 0; k < 6; k++)
+	{
+		if (shipsLeft[id][k] != shipsLeftCheck[k]) {
+			shipsLeft[id][k] = shipsLeftCheck[k];
+			shipDestroyed();
+		}
+	}
+	bool ret = false;
+	for (int k = 0; k < 6; k++)
+	{
+		ret = ret || shipsLeft[id][k];
+	}
+	return ret;
+}
 /* playGame */
 void fireMissile(int id, boolean player)
 {
@@ -243,6 +446,7 @@ void fireMissile(int id, boolean player)
 
 	if (myWorld[myEnemyID][myX][myY] == 1) {
 		myWorld[myEnemyID][myX][myY] = 2;
+		myWorld[myEnemyID+4][myX][myY] = 0;
 		myWorld[id + 2][myX][myY] = 2;
 		if (sound)playMissileSound(true);
 	}
@@ -252,38 +456,14 @@ void fireMissile(int id, boolean player)
 	}
 }
 
-/* Game Controller */
-void gameCtl(bool solo = true) {
-	bool player1 = true;
-	bool player2;
-	if (solo) {
-		if(debug)Serial.println("I'm in Solo Mode");
-		player2 = false;
-	}
-	else {
-		if (debug)Serial.println("I'm in Versus Mode");
-		player2 = true;
-	}
+/* #END World Initializer Helper */
+/*-------------------------------------------------------------------*/
 
-	initWorld(0, player1);
-	initWorld(1, player2);
 
-	cursorOnHitMatrix = true;
-	while (worldHasShips(0) && worldHasShips(1))
-	{
-    fireMissile(0,player1);
-	delay(750);
-    fireMissile(1,player2);
-	}
-	cursorOnHitMatrix = false;
-}
 
-void setIDandPlayer(int id, bool player) {
-	currentID = id;
-	currentPlayer = player;
-}
+/*-------------------------------------------------------------------*/
+/* #START World Initializer Helper */
 
-/* World Initializer */
 void initWorld(int id, bool player) {
 	setIDandPlayer(id, player);
 	for (int i = 0; i < 8; i++)
@@ -291,61 +471,50 @@ void initWorld(int id, bool player) {
 		for (int j = 0; j < 8; j++)
 		{
 			myWorld[id][i][j] = 0;
-			myWorld[2 + id][i][j] = 0;
+			myWorld[id+2][i][j] = 0;
+			myWorld[id+4][i][j] = 0;
 		}
 	}
-	placeShips(id, player);
+	placeShips();
 }
 
-/* World ShipCheck */
-bool worldHasShips(int id) {
-	for (int i = 0; i < 8; i++)
-	{
-		for (int j = 0; j < 8; j++)
-		{
-			if (myWorld[id][i][j] == 1)
-				return true;
-		}
-	}
-	return false;
-}
-
-/* Place 6 ships per Player*/
-void placeShips(int id, bool player) {
-	if (player) {
-		placePlayerShip(id, 4);
-		placePlayerShip(id, 4);
-		placePlayerShip(id, 3);
-		placePlayerShip(id, 3);
-		placePlayerShip(id, 2);
-		placePlayerShip(id, 2);
+/* Place Ship Wrapper Place 6 ships per Player*/
+void placeShips() {
+	if (currentPlayer) {
+		placePlayerShip(1,4);
+		placePlayerShip(2,4);
+		placePlayerShip(3,3);
+		placePlayerShip(4,3);
+		placePlayerShip(5,2);
+		placePlayerShip(6,2);
 	}
 	else {
 		//TODO AI
-		placeAIShip(id, 4);
-		placeAIShip(id, 4);
-		placeAIShip(id, 3);
-		placeAIShip(id, 3);
-		placeAIShip(id, 2);
-		placeAIShip(id, 2);
+		placeAIShip(1,4);
+		placeAIShip(2,4);
+		placeAIShip(3,3);
+		placeAIShip(4,3);
+		placeAIShip(5,2);
+		placeAIShip(6,2);
 	}
 }
 
-/* Inputwrapper for placing a player ship with placeShip*/
-void placePlayerShip(int id, int size) {
-	if (debug)Serial.println("Richtung:");
-	cursorLocked = true;
-	int dir = inputCtl();
-	cursorLocked = false;
+/* Inputwrapper for placing a player ship with placeShip */
+void placePlayerShip(int shipNum, int size) {
 	bool placed = false;
 	while (!placed) {
+		if (debug)Serial.println("Richtung:");
+		cursorLocked = true;
+		int dir = inputCtl();
+		cursorLocked = false;
 		if (debug)Serial.println("Position:");
-		inputCtl(true, id);
-		placed = placeShip(id, size, xPosCursor, yPosCursor, dir);
+		inputCtl(true, currentID);
+		placed = placeShip(shipNum, size, xPosCursor, yPosCursor, dir);
 	}
 }
 
-void placeAIShip(int id, int size) {
+/* AIWrapper for placing a AI ship with placeShip*/
+void placeAIShip(int shipNum, int size) {
 	int myX;
 	int myY;
 	int myDir;
@@ -353,11 +522,11 @@ void placeAIShip(int id, int size) {
 		myX = random(0, 7);
 		myY = random(0, 7);
 		myDir = random(LEFT, UP);
-	} while (!placeShip(id, size, myX, myY, myDir));
+	} while (!placeShip(shipNum, size, myX, myY, myDir));
 }
 
-/* Place a single ship, check for other ships and borders*/
-bool placeShip(int id, int size, int xPos, int yPos, int dir) {
+/* Place a single ship, check for other ships and borders */
+bool placeShip(int shipNum, int size, int xPos, int yPos, int dir) {
 	int x = 0;
 	int y = 0;
 	bool canPlace = true;
@@ -395,7 +564,7 @@ bool placeShip(int id, int size, int xPos, int yPos, int dir) {
 	{
 		for (int drift = -1; drift <= 1; drift++)
 		{
-			if (myWorld[id][limit(xPos + (y*drift) + (x*s))][limit(yPos + (x*drift) + (y*s))] != 0)
+			if (myWorld[currentID][limit(xPos + (y*drift) + (x*s))][limit(yPos + (x*drift) + (y*s))] != 0)
 				canPlace = false;
 		}
 	}
@@ -403,7 +572,8 @@ bool placeShip(int id, int size, int xPos, int yPos, int dir) {
 	if (canPlace) {
 		for (int s = 0; s < size; s++)
 		{
-			myWorld[id][xPos + (x*s)][yPos + (y*s)] = 1;
+			myWorld[currentID][xPos + (x*s)][yPos + (y*s)] = 1;
+			myWorld[currentID+4][xPos + (x*s)][yPos + (y*s)] = shipNum;
 		}
 		return true;
 	}
@@ -412,6 +582,7 @@ bool placeShip(int id, int size, int xPos, int yPos, int dir) {
 	}
 }
 
+/* Placement Helper */
 int limit(int val) {
 	if (val > 7)
 		return 7;
@@ -419,7 +590,14 @@ int limit(int val) {
 		return 0;
 }
 
-//LED Ersatzfunktionen
+/* #END World Initializer Helper */
+/*-------------------------------------------------------------------*/
+
+
+
+/*-------------------------------------------------------------------*/
+/* #START Debug Helper */
+
 void printLabeled(String name, int val) {
 	Serial.print(name + ": ");
 	Serial.println(val);
@@ -441,16 +619,14 @@ void printWorld(byte world[8][8]) {
 			}
 			if (debug)Serial.println();
 		}
-		
-			printLabeled("R", my_red[i]);
-			printLabeled("G", my_green[i]);
-			printLabeled("B", my_blue[i]);
-			printLabeled("xPos", xPosCursor);
-			printLabeled("yPos", yPosCursor);
-		
 	}
+	printLabeled("xPos", xPosCursor);
+	printLabeled("yPos", yPosCursor);
 	if (debug)Serial.println("!0######");
 }
+
+/* #END Debug Helper */
+/*-------------------------------------------------------------------*/
 
 /* Setup */
 void setup()
@@ -486,19 +662,6 @@ void setup()
 	/*----------------------Ende SPI Initialisierung----------------------*/
 	com = 1;
 	color = 0;
-	/*Display-Demo-Daten*/
-	//Anzeige testen....
-	if (DEMO) {
-		for (int i = 0; i<8; i++) {
-			my_green[i] = 0b10110111;
-			my_red[i] = 0b11111111;
-			my_green[i] = 0b11100100;
-			op_green[i] = 0x8E;
-			op_red[i] = 0x70;
-			op_blue[i] = 0x22;
-		}
-	}
-	/*ende Display-Demo-Daten*/
 
 	//Not pressed Joystick = 1 on InputPin zPinCtl
 	pinMode(zPinCtl, INPUT);
@@ -514,22 +677,39 @@ void setup()
 void loop()
 {
 	//Launcher
-	Serial.println("Solo oder Versus?");
+	if(debug)Serial.println("Solo oder Versus?");
+	setIDandPlayer(0, true);
+	chooseMenu(0);
+	cursorLocked = true;
 	inputCtl(false);
 	if (myControlEvent == LEFT) {
 		//Play Solo
-		gameCtl();
+		chooseMenu(1);
+		delay(200);
+		if (inputCtl() == CLICK) 
+			gameCtl();
 	}
 	else if (myControlEvent == RIGHT) {
 		//Play Versus
-		gameCtl(false);
+		chooseMenu(2);
+		delay(200);
+		if (inputCtl() == CLICK)
+			gameCtl(false);
 	}
 	else if (myControlEvent == UP) {
-		sound = !sound;
+		chooseMenu(3);
+		delay(200);
+		if (inputCtl() == CLICK)
+			sound = true;
 	}
 	else if (myControlEvent == DOWN) {
-		playMissileSound(true);
+		chooseMenu(4);
+		delay(200);
+		if (inputCtl() == CLICK)
+			sound = false;
 	}
+
+	cursorLocked = false;
 }
 
 /*----------------------Interrupt Routine----------------------------*/
@@ -549,30 +729,63 @@ void loop()
 */
 ISR(TIMER1_COMPA_vect) {
 	ledCtl();
-	digitalWrite(10, LOW); //Schieberegister Ausgang blocken
+	/*Display-Demo-Daten*/
+	//Anzeige testen....
+	if (displayDemo) {
+		for (int i = 0; i<8; i++) {
+			my_green[i] = 0b10110111;
+			my_red[i] = 0b11111111;
+			my_green[i] = 0b11100100;
+			op_green[i] = 0x8E;
+			op_red[i] = 0x70;
+			op_blue[i] = 0x22;
+		}
+	}
+	/*ende Display-Demo-Daten*/
+	digitalWrite(dPinRegisterOut, LOW); //Schieberegister Ausgang blocken
 						   //Daten schieben
+
 	SPI.transfer(0x02);
-	SPI.transfer(my_green[color]);
+
+	byte matrixR = my_red[color];
+	byte matrixG = my_green[color];
+	byte matrixB = my_blue[color];
+
+	//Weltfarbenmatrix schieben
+
+	SPI.transfer(matrixG);
 	if (ctrred == 3) {
-		SPI.transfer(my_red[color]);
+		SPI.transfer(matrixR);
 	}
 	else {
 		SPI.transfer(0xFF);
 	}
-	SPI.transfer(my_blue[color]);
+	SPI.transfer(matrixB);
+
+
+	//Gemeinsame Zeile? näher erläutern
 	SPI.transfer(com);
-	SPI.transfer(op_green[color]);
+	
+	if (!oneMatrixMode || (oneMatrixMode && cursorOnHitMatrix)) {
+		matrixR = op_red[color];
+		matrixG = op_green[color];
+		matrixB = op_blue[color];
+	}
+	
+	//Hitfarbenmatrix schieben
+	SPI.transfer(matrixG);
 	if (ctrred == 3) {
-		SPI.transfer(op_red[color]);
+		SPI.transfer(matrixR);
 		ctrred = 0;
 	}
 	else {
 		SPI.transfer(0xFF);
 	}
 	ctrred++;
-	SPI.transfer(op_blue[color]);
+	SPI.transfer(matrixB);
+
 	//Ende Daten schieben
-	digitalWrite(10, HIGH); //Schieberegister Ausgang aktivieren (= neue Anzeige wird geschaltet)
+	digitalWrite(dPinRegisterOut, HIGH); //Schieberegister Ausgang aktivieren (= neue Anzeige wird geschaltet)
 
 	color++; //naechste Zeile Farben
 	if (color >= 8) color = 0; //letzte Zeile Farben -> erste Zeile Farben
