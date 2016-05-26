@@ -37,6 +37,7 @@ const int dPinRegisterOut = 10;
 /* Game Configuration */
 const int ticksPerSecond = 8;
 const int sensiCtl = 4;
+const int shipSizes[6] = {4,4,3,3,2,2};
 
 
 /* Game Run Variables */
@@ -49,7 +50,7 @@ byte myWorld[6][8][8];
 bool shipsLeft[2][6] = { { true,true,true,true,true,true },{ true,true,true, true,true,true } };
 
 bool cursorLocked = false;
-bool soundE = false;
+bool sound = false;
 bool cursorOnHitMatrix = false;
 bool isCursorPos;
 bool currentID;
@@ -481,21 +482,17 @@ void initWorld(int id, bool player) {
 /* Place Ship Wrapper Place 6 ships per Player*/
 void placeShips() {
 	if (currentPlayer) {
-		placePlayerShip(1,4);
-		placePlayerShip(2,4);
-		placePlayerShip(3,3);
-		placePlayerShip(4,3);
-		placePlayerShip(5,2);
-		placePlayerShip(6,2);
+		for (int i = 0; i < 6; i++)
+		{
+			placePlayerShip(i+1, shipSizes[i]);
+		}
 	}
 	else {
 		//TODO AI
-		placeAIShip(1,4);
-		placeAIShip(2,4);
-		placeAIShip(3,3);
-		placeAIShip(4,3);
-		placeAIShip(5,2);
-		placeAIShip(6,2);
+		for (int i = 0; i < 6; i++)
+		{
+			placeAIShip(i+1, shipSizes[i]);
+		}
 	}
 }
 
